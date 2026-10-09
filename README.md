@@ -298,9 +298,7 @@ Run the complete stack with Docker Compose: PostgreSQL, persistent local file st
 ```bash
 cp .env.example .env
 # Set the four secrets documented in .env.example.
-docker compose build app migrate
-docker compose run --rm migrate
-docker compose up -d
+docker compose up -d --build
 ```
 
 Open `http://localhost:3000/signup` and check verification email at `http://localhost:8025`. Configure real SMTP and a TLS reverse proxy before production use. See the [self-hosting guide](apps/web/src/content/docs/self-hosting.mdx) for provider configuration, persistence, upgrades, and production deployment.

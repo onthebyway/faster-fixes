@@ -105,6 +105,50 @@ jobs:
 
       - run: pnpm test
 
+  self-hosted:
+    name: Self-hosted Compose
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Generate disposable local secrets
+        run: |
+          umask 077
+          for key in BETTER_AUTH_SECRET POSTGRES_PASSWORD INNGEST_EVENT_KEY INNGEST_SIGNING_KEY; do
+            printf '%s=%s\n' "$key" "$(openssl rand -hex 32)"
+          done > .env
+
+      # Only disposable CI volumes are migrated. No hosted credentials are supplied.
+      - run: docker compose up -d --build --wait --wait-timeout 120
+
+      - run: node scripts/self-hosted-smoke.ts
+
+      - name: Verify persistence after service restart
+        run: |
+          docker compose restart postgres app inngest mailpit
+          docker compose up -d --wait --wait-timeout 120
+          node scripts/self-hosted-smoke.ts --check-persistence
+          node scripts/self-hosted-smoke.ts
+
+      - name: Collect Compose logs
+        if: always()
+        run: docker compose logs --no-color > /tmp/self-hosted-compose.log
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: self-hosted-compose-logs
+          path: /tmp/self-hosted-compose.log
+          retention-days: 7
+
+      - run: docker compose down
+        if: always()
+
   e2e:
     name: Widget end to end
     runs-on: ubuntu-latest

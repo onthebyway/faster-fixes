@@ -7,7 +7,9 @@ FasterFixes can run without a Neon, R2, Resend, Stripe, GitHub, or Inngest Cloud
 
 ## Docker Compose quick start
 
-Install Docker Engine with Docker Compose 2.24 or newer, then clone the repository:
+Install Docker Engine with Docker Compose 2.24 or newer. Allow at least 4 GB of RAM and several GB of free disk for image builds. The runtime needs no hosted services or Stripe/GitHub credentials. Image builds download base images, packages, and fonts; those fonts are served locally at runtime.
+
+Clone the repository:
 
 ```bash
 git clone https://github.com/manucoffin/faster-fixes.git
@@ -18,11 +20,10 @@ cp .env.example .env
 Edit `.env` and set the four required secrets. Generate the auth secret with `openssl rand -base64 32`, and each of `POSTGRES_PASSWORD`, `INNGEST_EVENT_KEY`, and `INNGEST_SIGNING_KEY` with `openssl rand -hex 32`. The database password must be URL-safe because Compose uses it in the connection URL.
 
 ```bash
-docker compose build app migrate
-# Operator-managed production migrations, run before every deployment.
-docker compose run --rm migrate
-docker compose up -d
+docker compose up -d --build
 ```
+
+This operator-invoked deployment starts PostgreSQL, runs the one-shot migration service, and starts the app only after migrations succeed. Review database migrations and back up existing data before deploying an upgrade. Migrations never run during image builds or inside the app process.
 
 The stack includes:
 
@@ -33,6 +34,19 @@ The stack includes:
 
 The application, Mailpit, and Inngest ports bind to loopback. Open `/signup`, create an account, and use Mailpit to follow the verification link. The first account is not automatically an administrator; administrator roles are managed separately. Create an Organization and Project, then configure a Widget using its **Project public ID** and your instance's API origin. The **Reviewer token** controls access to Feedback.
 
+The onboarding install snippets use this instance for both the widget script and API. A script-only installation needs no external CDN:
+
+```html
+<script
+  src="http://localhost:3000/widget.iife.js"
+  data-project-id="proj_your_project_id"
+  data-api-origin="http://localhost:3000"
+  defer
+></script>
+```
+
+Replace the origin and Project public ID with your own. For React, pass `apiOrigin="http://localhost:3000"` to `FeedbackProvider` alongside `projectId`. Package installation is a build-time step, not a runtime cloud dependency.
+
 Check readiness with:
 
 ```bash
@@ -40,7 +54,27 @@ curl --fail http://localhost:3000/api/health
 docker compose logs app inngest
 ```
 
-Inngest polls the application at `http://app:3000/api/inngest` every 30 seconds to register workflows. It may log a failed sync while the application is starting; subsequent polls retry. Confirm the application is synced in the Inngest dashboard, and that email-verification events complete.
+Inngest polls the application at `http://app:3000/api/inngest` every 30 seconds to register workflows. It may log a failed sync while the application is starting; subsequent polls retry. Before verifying the first account, confirm the application is synced in the Inngest dashboard so its welcome-email workflow is registered. Then check that email-verification events complete.
+
+## Local deployment smoke test
+
+With the disposable local Compose stack running, use Node.js 24 to run:
+
+```bash
+node scripts/self-hosted-smoke.ts
+```
+
+This waits for workflow registration, then tests signup, SMTP verification, login, the signed welcome-email workflow, Project/Reviewer creation, avatar/logo uploads, Feedback screenshots, and signed reads. It creates test records and saves local test credentials in `/tmp/fasterfixes-self-hosted-smoke.json` with owner-only permissions. Do not run it against an existing production database.
+
+Check that data survives a restart:
+
+```bash
+docker compose restart postgres app inngest mailpit
+docker compose up -d --wait --wait-timeout 120
+node scripts/self-hosted-smoke.ts --check-persistence
+```
+
+The repository CI runs these same checks against a freshly built production image and disposable Compose volumes, without provider credentials.
 
 ## Production deployment
 
@@ -147,10 +181,11 @@ pnpm build:packages
 pnpm --filter @workspace/db db:gen
 # Operator-managed production migration, not migrate dev.
 pnpm --filter @workspace/db exec prisma migrate deploy
-pnpm --filter web build
+# Supply your runtime BETTER_AUTH_SECRET in the build environment as well.
+NODE_OPTIONS=--max-old-space-size=2048 pnpm --filter web build --webpack
 pnpm --filter web start
 ```
 
 For self-hosted Inngest, point `INNGEST_BASE_URL` to its server, use matching keys, and register your app's `/api/inngest` URL using `inngest start --sdk-url ... --poll-interval 30`. Leave `INNGEST_BASE_URL` unset only when intentionally using Inngest Cloud.
 
-Point installed Widgets and the [MCP server](/docs/mcp/setup) at your own application origin, not the FasterFixes cloud API.
+Set `NEXT_PUBLIC_FF_API_ORIGIN` to your public application origin before building so onboarding snippets point to your instance. Point installed Widgets and the [MCP server](/docs/mcp/setup) at your own application origin, not the FasterFixes cloud API.

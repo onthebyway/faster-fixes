@@ -10,6 +10,10 @@ const nextConfig = {
 
   experimental: {
     authInterrupts: true,
+    // Keep production image builds within the memory budget of a small host.
+    cpus: 2,
+    webpackBuildWorker: true,
+    webpackMemoryOptimizations: true,
   },
 
   async redirects() {

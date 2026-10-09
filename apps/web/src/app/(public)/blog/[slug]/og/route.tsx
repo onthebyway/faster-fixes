@@ -1,7 +1,7 @@
 import { blogSource } from "@/lib/blog/source";
 import { readFile } from "node:fs/promises";
 import { ImageResponse } from "next/og";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { OgCard } from "./og-card";
 
 // Node runtime, not edge: Fumadocs' blogSource pulls in node:path/fs to
@@ -10,7 +10,10 @@ export const runtime = "nodejs";
 
 // Module-scoped: read once per cold start, reused per request.
 const fontPromise = readFile(
-  fileURLToPath(new URL("./_fonts/space-grotesk-bold.ttf", import.meta.url)),
+  join(
+    process.cwd(),
+    "src/app/(public)/blog/[slug]/og/_fonts/space-grotesk-bold.ttf",
+  ),
 );
 
 type Params = { slug: string };

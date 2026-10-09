@@ -6,7 +6,8 @@ RUN corepack enable && corepack prepare pnpm@10.4.1 --activate
 COPY . .
 RUN pnpm install --frozen-lockfile
 
-# Explicitly invoked by the operator, never during the application build/start.
+# One-shot migration service, ordered by the operator's Compose deployment.
+# Never run migrations during the image build or application process startup.
 FROM dependencies AS migrate
 CMD ["pnpm", "--filter", "@workspace/db", "exec", "prisma", "migrate", "deploy"]
 
@@ -20,7 +21,9 @@ ENV BASE_URL=${BASE_URL} \
     NEXT_PUBLIC_FF_API_ORIGIN=${NEXT_PUBLIC_FF_API_ORIGIN} \
     NEXT_PUBLIC_IS_CLOUD=false \
     STORAGE_PROVIDER=local
-RUN pnpm build:packages && pnpm --filter @workspace/db db:gen && pnpm --filter web build
+# The temporary build secret is never persisted; Compose supplies the runtime secret.
+# Use the memory-optimized Webpack build path for single-host deployments.
+RUN pnpm build:packages && pnpm --filter @workspace/db db:gen && BETTER_AUTH_SECRET="$(openssl rand -hex 32)" NODE_OPTIONS=--max-old-space-size=2048 pnpm --filter web build --webpack
 
 FROM node:24-bookworm-slim AS runtime
 WORKDIR /app

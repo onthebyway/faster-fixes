@@ -1,15 +1,11 @@
-import {
-  decryptWithKey,
-  encryptWithKey,
-  loadHexKeyFromEnv,
-} from "@/utils/crypto/aes-gcm";
+import { createTokenCipher } from "@/utils/crypto/token-cipher";
 
-const key = loadHexKeyFromEnv("SLACK_TOKEN_ENCRYPTION_KEY");
+const cipher = createTokenCipher("SLACK_TOKEN_ENCRYPTION_KEY");
 
 export function encryptSlackToken(plain: string): string {
-  return encryptWithKey(plain, key);
+  return cipher.encrypt(plain);
 }
 
 export function decryptSlackToken(payload: string): string {
-  return decryptWithKey(payload, key);
+  return cipher.decrypt(payload);
 }
