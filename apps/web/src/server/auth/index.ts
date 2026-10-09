@@ -1,5 +1,6 @@
 import "server-only";
 
+import { isCloud } from "@/utils/environment/env";
 import { prisma } from "@workspace/db";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
@@ -11,16 +12,18 @@ import { emailAndPassword } from "./config/email-and-password";
 import { emailVerification } from "./config/email-verification";
 import { customSessionPlugin } from "./plugins/custom-session";
 import { organizationPlugin } from "./plugins/organization";
-import { stripePlugin } from "./plugins/stripe";
+import { createStripePlugin } from "./plugins/stripe";
 
 export const auth = betterAuth({
   database: prismaAdapter(prisma, {
     provider: "postgresql",
   }),
   trustedOrigins: [
+    process.env.BETTER_AUTH_URL,
+    process.env.BASE_URL,
     `https://${process.env.DOMAIN_NAME}`,
     `https://www.${process.env.DOMAIN_NAME}`,
-  ],
+  ].filter((origin): origin is string => Boolean(origin)),
   emailAndPassword,
   emailVerification,
   databaseHooks,
@@ -67,7 +70,7 @@ export const auth = betterAuth({
     customSessionPlugin,
     admin(),
     organizationPlugin,
-    stripePlugin,
+    ...(isCloud() ? [createStripePlugin()] : []),
     lastLoginMethod(),
     nextCookies(), // must be last plugin of the array
   ],

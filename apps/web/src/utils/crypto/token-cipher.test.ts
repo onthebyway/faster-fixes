@@ -27,13 +27,17 @@ describe("createTokenCipher", () => {
     expect(() => createTokenCipher(ENV_VAR).decrypt(payload)).toThrow();
   });
 
-  it("throws when the env var is missing", () => {
+  it("does not require credentials until the integration is used", () => {
     vi.stubEnv(ENV_VAR, undefined);
-    expect(() => createTokenCipher(ENV_VAR)).toThrow(`${ENV_VAR} is not set`);
+    const cipher = createTokenCipher(ENV_VAR);
+    expect(() => cipher.encrypt("token")).toThrow(`${ENV_VAR} is not set`);
+    expect(() => cipher.decrypt("payload")).toThrow(`${ENV_VAR} is not set`);
   });
 
   it("throws when the key has the wrong length", () => {
     vi.stubEnv(ENV_VAR, "abcd");
-    expect(() => createTokenCipher(ENV_VAR)).toThrow("must decode to 32 bytes");
+    expect(() => createTokenCipher(ENV_VAR).encrypt("token")).toThrow(
+      "must decode to 32 bytes",
+    );
   });
 });

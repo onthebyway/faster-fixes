@@ -3,7 +3,7 @@ import {
   SubscriptionStatus,
 } from "@/app/_domains/subscription";
 import { SUBSCRIPTION_PLANS } from "@/server/auth/config/subscription-plans";
-import { stripeApi } from "@/server/stripe";
+import { getStripeApi } from "@/server/stripe";
 import type Stripe from "stripe";
 import { wasPayingAt } from "../_helpers/was-paying-at";
 
@@ -241,7 +241,7 @@ const fromCents = (cents: number) => Math.round(cents) / 100;
 
 export async function getBillingMetrics(
   { now }: { now: Date },
-  stripe: Stripe = stripeApi,
+  stripe: Stripe = getStripeApi(),
 ) {
   const nowSeconds = Math.floor(now.getTime() / 1000);
   const windowStartSeconds = nowSeconds - WINDOW_SECONDS;

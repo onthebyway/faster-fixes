@@ -1,5 +1,5 @@
 import { NotFoundError } from "@/server/errors/domain-errors";
-import { stripeApi } from "@/server/stripe";
+import { getStripeApi } from "@/server/stripe";
 import type Stripe from "stripe";
 import { getOrganizationSubscription } from "./get-organization-subscription";
 
@@ -16,7 +16,7 @@ function isUnknownStripeResource(error: unknown) {
 
 export async function getStripeSubscription(
   { headers }: { headers: Headers },
-  stripe: Stripe = stripeApi,
+  stripe: Stripe = getStripeApi(),
 ) {
   // The identifier comes from the caller's active Organization, never from the
   // client, so a User reads no Subscription but their own Organization's.

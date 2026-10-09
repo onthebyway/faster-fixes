@@ -1,7 +1,6 @@
 import { ForbiddenError } from "@/server/errors/domain-errors";
-import { s3Client } from "@/server/storage";
-import { requireEnv } from "@/utils/environment/require-env";
-import { deleteObject } from "@better-upload/server/helpers";
+import { getStorageBucket } from "@/server/storage/config";
+import { deleteStorageObject } from "@/server/storage/objects";
 import { prisma } from "@workspace/db";
 import type { UpdateOrganizationLogoInput } from "./update-organization-logo.schema";
 
@@ -32,11 +31,8 @@ export async function updateOrganizationLogo(
 
   if (organization.logo) {
     try {
-      await deleteObject(s3Client, {
-        bucket: requireEnv(
-          "STORAGE_BUCKET_NAME",
-          process.env.STORAGE_BUCKET_NAME,
-        ),
+      await deleteStorageObject({
+        bucket: getStorageBucket(),
         key: organization.logo,
       });
     } catch (error) {

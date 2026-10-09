@@ -1,5 +1,5 @@
 import { auth } from "@/server/auth";
-import { stripeApi } from "@/server/stripe";
+import { getStripeApi } from "@/server/stripe";
 import { prisma } from "@workspace/db";
 
 export async function listPastInvoices({ headers }: { headers: Headers }) {
@@ -20,7 +20,7 @@ export async function listPastInvoices({ headers }: { headers: Headers }) {
     return { invoices: [], status: "no_stripe_customer" };
   }
 
-  const invoices = await stripeApi.invoices.list({
+  const invoices = await getStripeApi().invoices.list({
     customer: organization.stripeCustomerId,
     limit: 100,
     status: "paid",

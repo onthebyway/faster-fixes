@@ -291,6 +291,20 @@ You can find your agent token and project ID in [Organization Settings](https://
 - [Inngest](https://inngest.com) — background jobs
 - [Turborepo](https://turbo.build) — monorepo tooling
 
+## Self-hosting
+
+Run the complete stack with Docker Compose: PostgreSQL, persistent local file storage, self-hosted Inngest, and Mailpit for test email. No hosted provider account is required. SMTP, S3-compatible servers (including MinIO), R2, Resend, and Plunk are selectable alternatives.
+
+```bash
+cp .env.example .env
+# Set the four secrets documented in .env.example.
+docker compose build app migrate
+docker compose run --rm migrate
+docker compose up -d
+```
+
+Open `http://localhost:3000/signup` and check verification email at `http://localhost:8025`. Configure real SMTP and a TLS reverse proxy before production use. See the [self-hosting guide](apps/web/src/content/docs/self-hosting.mdx) for provider configuration, persistence, upgrades, and production deployment.
+
 ## License
 
 This repository is licensed under the [GNU AGPLv3 License](./LICENSE).

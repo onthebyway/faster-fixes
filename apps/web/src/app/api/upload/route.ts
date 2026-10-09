@@ -1,79 +1,125 @@
-import { auth } from "@/server/auth";
+import { ForbiddenError } from "@/server/errors/domain-errors";
 import { s3Client } from "@/server/storage";
-import { requireEnv } from "@/utils/environment/require-env";
+import { getStorageBucket, getStorageProvider } from "@/server/storage/config";
+import { createLocalStorageUrl } from "@/server/storage/local-url";
 import { RejectUpload, route, type Router } from "@better-upload/server";
 import { toRouteHandler } from "@better-upload/server/adapters/next";
 import { z } from "zod";
-import { findUploadingMember } from "./_services/find-uploading-member";
+import { getUploadKey } from "./_services/get-upload-key";
+
+const fileTypes = ["image/png", "image/jpeg", "image/webp"];
+const maxFileSize = 2 * 1024 * 1024;
 
 const routes: Router["routes"] = {
   "organization-logo": route({
-    fileTypes: ["image/png", "image/jpeg", "image/webp"],
-    maxFileSize: 2 * 1024 * 1024,
-    clientMetadataSchema: z.object({
-      organizationId: z.string(),
+    fileTypes,
+    maxFileSize,
+    clientMetadataSchema: z.object({ organizationId: z.string() }),
+    onBeforeUpload: async ({ req, file, clientMetadata }) => ({
+      objectInfo: {
+        key: await getUploadKey({
+          headers: req.headers,
+          route: "organization-logo",
+          contentType: file.type,
+          organizationId: clientMetadata.organizationId,
+        }).catch(rejectUnauthorizedUpload),
+      },
     }),
-    onBeforeUpload: async ({ req, file, clientMetadata }) => {
-      const session = await auth.api.getSession({
-        headers: req.headers,
-      });
-
-      if (!session) {
-        throw new RejectUpload("Unauthorized");
-      }
-
-      const uploadingMember = await findUploadingMember({
-        organizationId: clientMetadata.organizationId,
-        userId: session.user.id,
-      });
-
-      if (!uploadingMember) {
-        throw new RejectUpload(
-          "You do not have permission to modify this organization.",
-        );
-      }
-
-      const extension = file.type.split("/")[1] ?? "png";
-
-      return {
-        objectInfo: {
-          key: `organization-logos/${clientMetadata.organizationId}/${Date.now()}.${extension}`,
-        },
-      };
-    },
   }),
   "user-avatar": route({
-    fileTypes: ["image/png", "image/jpeg", "image/webp"],
-    maxFileSize: 2 * 1024 * 1024,
-    onBeforeUpload: async ({ req, file }) => {
-      const session = await auth.api.getSession({
-        headers: req.headers,
-      });
-
-      if (!session) {
-        throw new RejectUpload("Unauthorized");
-      }
-
-      const extension = file.type.split("/")[1] ?? "png";
-
-      return {
-        objectInfo: {
-          key: `user-avatars/${session.user.id}/${Date.now()}.${extension}`,
-        },
-      };
-    },
+    fileTypes,
+    maxFileSize,
+    onBeforeUpload: async ({ req, file }) => ({
+      objectInfo: {
+        key: await getUploadKey({
+          headers: req.headers,
+          route: "user-avatar",
+          contentType: file.type,
+        }).catch(rejectUnauthorizedUpload),
+      },
+    }),
   }),
 };
 
-// Built per request so a missing bucket name fails the upload, not the module import.
+function rejectUnauthorizedUpload(error: unknown): never {
+  if (error instanceof ForbiddenError) throw new RejectUpload(error.message);
+  throw error;
+}
+
+const localUploadSchema = z.object({
+  route: z.enum(["organization-logo", "user-avatar"]),
+  files: z
+    .array(
+      z.object({
+        name: z.string().min(1),
+        size: z.number().int().min(0).max(maxFileSize),
+        type: z.enum(["image/png", "image/jpeg", "image/webp"]),
+      }),
+    )
+    .length(1),
+  metadata: z.object({ organizationId: z.string().optional() }).optional(),
+});
+
+async function localUpload(req: Request) {
+  const parsed = localUploadSchema.safeParse(
+    await req.json().catch(() => null),
+  );
+  if (!parsed.success) {
+    return Response.json(
+      {
+        error: { type: "invalid_request", message: "Invalid upload request." },
+      },
+      { status: 400 },
+    );
+  }
+  const { route: uploadRoute, files, metadata } = parsed.data;
+  const file = files[0];
+  if (!file) {
+    return Response.json(
+      { error: { type: "invalid_request", message: "File required." } },
+      { status: 400 },
+    );
+  }
+  try {
+    const key = await getUploadKey({
+      headers: req.headers,
+      route: uploadRoute,
+      contentType: file.type,
+      organizationId: metadata?.organizationId,
+    });
+    return Response.json({
+      files: [
+        {
+          signedUrl: createLocalStorageUrl({
+            method: "PUT",
+            bucket: getStorageBucket(),
+            key,
+            contentType: file.type,
+            size: file.size,
+          }),
+          file: { ...file, objectInfo: { key, metadata: {} } },
+          headers: {},
+          skip: false,
+        },
+      ],
+      metadata: {},
+    });
+  } catch (error) {
+    if (error instanceof ForbiddenError) {
+      return Response.json(
+        { error: { type: "rejected", message: error.message } },
+        { status: 400 },
+      );
+    }
+    throw error;
+  }
+}
+
 export function POST(req: Request) {
-  const router: Router = {
+  if (getStorageProvider() === "local") return localUpload(req);
+  return toRouteHandler({
     client: s3Client,
-    bucketName: requireEnv(
-      "STORAGE_BUCKET_NAME",
-      process.env.STORAGE_BUCKET_NAME,
-    ),
+    bucketName: getStorageBucket(),
     routes,
-  };
-  return toRouteHandler(router).POST(req);
+  }).POST(req);
 }

@@ -1,5 +1,4 @@
-import { s3Client } from "@/server/storage";
-import { deleteObjects } from "@better-upload/server/helpers";
+import { deleteStorageObjects } from "./objects";
 import { prisma } from "@workspace/db";
 
 // S3 accepts at most 1000 keys in one DeleteObjects request.
@@ -15,19 +14,26 @@ export async function deleteAssets(assetIds: string[]) {
     const batchIds = assetIds.slice(start, start + DELETE_BATCH_SIZE);
     const assets = await prisma.asset.findMany({
       where: { id: { in: batchIds } },
-      select: { id: true, key: true, bucket: true },
+      select: { id: true, key: true, bucket: true, provider: true },
     });
 
-    const keysByBucket = new Map<string, string[]>();
+    const keysByBucket = new Map<
+      string,
+      { bucket: string; provider: string; keys: string[] }
+    >();
     for (const asset of assets) {
-      keysByBucket.set(asset.bucket, [
-        ...(keysByBucket.get(asset.bucket) ?? []),
-        asset.key,
-      ]);
+      const groupKey = `${asset.provider}:${asset.bucket}`;
+      const group = keysByBucket.get(groupKey) ?? {
+        bucket: asset.bucket,
+        provider: asset.provider,
+        keys: [],
+      };
+      group.keys.push(asset.key);
+      keysByBucket.set(groupKey, group);
     }
 
-    for (const [bucket, keys] of keysByBucket) {
-      await deleteBucketObjects(bucket, keys);
+    for (const { bucket, provider, keys } of keysByBucket.values()) {
+      await deleteBucketObjects(bucket, keys, provider);
     }
 
     await prisma.asset.deleteMany({
@@ -37,13 +43,13 @@ export async function deleteAssets(assetIds: string[]) {
 }
 
 // Best-effort: a failed S3 delete is logged and never blocks the DB cleanup.
-async function deleteBucketObjects(bucket: string, keys: string[]) {
+async function deleteBucketObjects(
+  bucket: string,
+  keys: string[],
+  provider: string,
+) {
   try {
-    const { errors } = await deleteObjects(s3Client, {
-      bucket,
-      objects: keys.map((key) => ({ key })),
-      quiet: true,
-    });
+    const { errors } = await deleteStorageObjects(bucket, keys, provider);
     for (const error of errors) {
       console.error(
         `Failed to delete S3 object (key=${error.key}): ${error.code} ${error.message}`,

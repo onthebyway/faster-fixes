@@ -1,4 +1,5 @@
 import { DashboardPageContent } from "@/app/_components/dashboard/dashboard-page-content";
+import { isCloud } from "@/utils/environment/env";
 import { HeadlineStrip } from "./_components/headline-strip";
 import { ActivationFunnelCard } from "./_features/activation-funnel-card/activation-funnel-card.client";
 import { AdoptionCard } from "./_features/adoption-card/adoption-card.client";
@@ -17,21 +18,29 @@ export default async function AdminDashboardPage() {
     >
       <div className="space-y-4">
         <HeadlineStrip>
-          <MrrCard />
-          <CollectedRevenueCard />
-          <PayingOrganizationsCard />
+          {isCloud() && (
+            <>
+              <MrrCard />
+              <CollectedRevenueCard />
+              <PayingOrganizationsCard />
+            </>
+          )}
           <EngagedOrganizationsCard />
         </HeadlineStrip>
 
         <div className="grid gap-4 lg:grid-cols-3">
           <RetentionCard />
-          <ActivationFunnelCard />
-          <AdoptionCard />
+          {isCloud() && (
+            <>
+              <ActivationFunnelCard />
+              <AdoptionCard />
+            </>
+          )}
         </div>
 
         <FeedbackSummary />
 
-        <MonthlyGrowthChart />
+        {isCloud() && <MonthlyGrowthChart />}
       </div>
     </DashboardPageContent>
   );

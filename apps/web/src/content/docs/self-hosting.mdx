@@ -1,109 +1,156 @@
 ---
 title: Self-hosting
-description: Deploy FasterFixes on your own infrastructure. Host the dashboard, the widget API, and the MCP server without relying on the cloud version.
+description: Run FasterFixes with PostgreSQL, local or S3-compatible storage, SMTP, and a self-hosted background job runner.
 ---
 
-FasterFixes is AGPL-3.0. You can deploy the full stack on your own infrastructure: dashboard, widget API, and background jobs. This guide covers the minimal setup for a production deployment.
+FasterFixes can run without a Neon, R2, Resend, Stripe, GitHub, or Inngest Cloud account. The application is AGPL-3.0-or-later; the widget packages and MCP server are MIT-licensed.
 
-The widget packages (`@fasterfixes/widget`, `@fasterfixes/react`, `@fasterfixes/core`) are MIT-licensed and can be embedded in any client project regardless of where you host the backend.
+## Docker Compose quick start
 
-## Requirements
-
-You will need:
-
-- A **Node.js host**: Vercel is recommended (the repo is a Next.js app), but anything that runs Next.js will work (Railway, Fly, self-managed).
-- A **PostgreSQL database**: Neon, Supabase, Railway, or self-managed.
-- An **Inngest** account for background jobs (screenshot processing, GitHub sync, etc.). The free tier is enough to get started.
-- An **S3-compatible object store** for screenshots: Cloudflare R2 is the recommended default; AWS S3 works identically.
-- A **Resend** or **Plunk** account for transactional email: required to send sign-up confirmations and password resets.
-- (Optional) A **GitHub App** if you want the GitHub integration.
-
-Stripe is not needed for self-hosted installs. The billing code only runs on the hosted cloud version.
-
-## 1. Clone and deploy
-
-Fork or clone [the repository](https://github.com/manucoffin/faster-fixes), then deploy the `apps/web` workspace to your host.
+Install Docker Engine with Docker Compose 2.24 or newer, then clone the repository:
 
 ```bash
 git clone https://github.com/manucoffin/faster-fixes.git
 cd faster-fixes
-pnpm install
+cp .env.example .env
 ```
 
-On Vercel, import the repo and set the root directory to `apps/web`. Vercel auto-detects Next.js and Turborepo.
-
-## 2. Configure environment variables
-
-Copy `apps/web/.env.example` and fill in the values. The minimum set for a self-hosted deployment:
+Edit `.env` and set the four required secrets. Generate the auth secret with `openssl rand -base64 32`, and each of `POSTGRES_PASSWORD`, `INNGEST_EVENT_KEY`, and `INNGEST_SIGNING_KEY` with `openssl rand -hex 32`. The database password must be URL-safe because Compose uses it in the connection URL.
 
 ```bash
-# Core
-DOMAIN_NAME="your-domain.com"
-BASE_URL="https://your-domain.com"
-DATABASE_URL="postgresql://user:password@host:5432/db?schema=public"
-
-# Auth
-BETTER_AUTH_SECRET="<generate with: openssl rand -base64 32>"
-BETTER_AUTH_URL="https://your-domain.com"
-
-# Storage (Cloudflare R2)
-STORAGE_REGION="auto"
-STORAGE_BUCKET_NAME="your-bucket"
-NEXT_PUBLIC_STORAGE_BASE_URL="https://<account-id>.r2.cloudflarestorage.com/your-bucket"
-R2_ACCOUNT_ID="..."
-R2_ACCESS_KEY_ID="..."
-R2_SECRET_ACCESS_KEY="..."
-
-# Inngest (required in production)
-INNGEST_EVENT_KEY="..."
-INNGEST_SIGNING_KEY="..."
-
-# Transactional email: required for sign-up confirmations and password resets.
-# Use either Resend or Plunk.
-RESEND_API_KEY="re_..."
-# PLUNK_SECRET_KEY="sk_..."
-
-# Widget API (points clients' widgets at your instance)
-NEXT_PUBLIC_FF_API_ORIGIN="https://your-domain.com"
-
-# Self-hosted flag (keep false to skip marketing pages)
-NEXT_PUBLIC_IS_CLOUD="false"
+docker compose build app migrate
+# Operator-managed production migrations, run before every deployment.
+docker compose run --rm migrate
+docker compose up -d
 ```
 
-GitHub App variables are optional. Skip them unless you need the GitHub integration. Leave the Stripe variables unset. Billing is cloud-only and self-hosted installs don't run it.
+The stack includes:
 
-If you prefer AWS S3 over Cloudflare R2, use `AWS_ACCESS_KEY_ID`, `AWS_BUCKET_NAME`, and `AWS_SECRET_ACCESS_KEY` instead of the R2 variables.
+- **Application** at `http://localhost:3000`, with local file storage in a persistent volume.
+- **PostgreSQL 17**, reachable only within the Compose network.
+- **Self-hosted Inngest** at `http://localhost:8288`, with persistent SQLite data and queue snapshots. No cloud account is required.
+- **Mailpit** at `http://localhost:8025`, which captures verification, invitation, and password-reset emails for testing. It does not deliver emails to real recipients.
 
-## 3. Provision external services
+The application, Mailpit, and Inngest ports bind to loopback. Open `/signup`, create an account, and use Mailpit to follow the verification link. The first account is not automatically an administrator; administrator roles are managed separately. Create an Organization and Project, then configure a Widget using its **Project public ID** and your instance's API origin. The **Reviewer token** controls access to Feedback.
 
-### PostgreSQL
+Check readiness with:
 
-Any Postgres 14+ works. Create a database and put the connection string in `DATABASE_URL`.
+```bash
+curl --fail http://localhost:3000/api/health
+docker compose logs app inngest
+```
+
+Inngest polls the application at `http://app:3000/api/inngest` every 30 seconds to register workflows. It may log a failed sync while the application is starting; subsequent polls retry. Confirm the application is synced in the Inngest dashboard, and that email-verification events complete.
+
+## Production deployment
+
+Before inviting real users:
+
+1. Put a TLS reverse proxy in front of the application. Set `BASE_URL` and `DOMAIN_NAME` to the public URL and hostname. Keep Inngest, Mailpit, and PostgreSQL private; their management interfaces are not public application endpoints.
+2. Set real SMTP credentials and a verified `EMAIL_FROM`. Normally use port 587 with `SMTP_REQUIRE_TLS=true`, or port 465 with `SMTP_SECURE=true`. Do not leave the Mailpit settings in place for real deliveries.
+3. Rebuild the app after changing `BASE_URL` or `NEXT_PUBLIC_STORAGE_BASE_URL`. Next.js embeds public variables in browser bundles; changing only container environment variables is insufficient.
+4. Back up the PostgreSQL, storage, and Inngest volumes. Restore them together when recovering an instance. Local storage requires a persistent disk shared by every app replica; use S3-compatible storage when replicas cannot share that disk.
+5. Monitor disk space and workflow failures. The bundled Inngest setup is single-node: queue snapshots are periodic, not a high-availability guarantee. For stronger recovery guarantees, configure external persistent Redis and PostgreSQL using Inngest's `--redis-uri` and `--postgres-uri` flags. See [Inngest self-hosting documentation](https://www.inngest.com/docs/platform-and-operations/self-host-inngest).
+
+Never run `docker compose down -v` unless you intend to destroy the persisted data. Normal `down` or container replacement preserves named volumes. Give Inngest time for graceful shutdown so it can save its queue snapshot.
+
+## Database providers
+
+`DATABASE_PROVIDER=postgres` is the default in development and production. It uses the standard TCP PostgreSQL adapter, so ordinary PostgreSQL containers and hosted PostgreSQL services work without Neon.
+
+Set `DATABASE_PROVIDER=neon` explicitly to use the Neon adapter. `NODE_ENV=production` no longer selects Neon automatically.
+
+Authentication rate limits and API rate limits already use PostgreSQL. No hosted cache service or Redis is required by the application. Next.js uses its ordinary local cache; a multi-replica deployment may need separate cache coordination, which is outside the single-node Compose setup.
+
+## Email providers
+
+Set `MAILER_PROVIDER` to `smtp`, `resend`, or `plunk`.
+
+### SMTP
+
+```bash
+MAILER_PROVIDER=smtp
+EMAIL_FROM="FasterFixes <support@example.com>"
+SMTP_HOST=mail.example.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_REQUIRE_TLS=true
+SMTP_USER=your-user
+SMTP_PASSWORD=your-password
+```
+
+Use your own mail server or any SMTP-compatible provider, including SendGrid. Credentials must either both be set or both be omitted. Certificate verification remains enabled. All transactional templates are rendered by the application; SMTP does not require provider templates or marketing-contact APIs.
+
+`EMAIL_FROM` overrides the complete sender address. Alternatively, `MAIL_FROM_DOMAIN` selects a verified sending domain distinct from the application's `DOMAIN_NAME`.
+
+### Existing API providers
+
+Resend uses `RESEND_API_KEY`; Plunk uses `PLUNK_SECRET_KEY`. Set `PLUNK_BASE_URL` when running Plunk on your own infrastructure. Existing API-key-only deployments still select their configured provider when `MAILER_PROVIDER` is unset.
+
+`RESEND_SEGMENT_ID` is optional marketing functionality, not an authentication requirement. Providers without contact-management support skip that job.
+
+## File storage providers
+
+### Local filesystem
+
+```bash
+STORAGE_PROVIDER=local
+STORAGE_LOCAL_PATH=/data/storage
+STORAGE_BUCKET_NAME=uploads
+NEXT_PUBLIC_STORAGE_BASE_URL=/api/storage/uploads
+```
+
+The application handles uploads, reads, and deletion. Dashboard uploads require authentication and, for Organization logos, an owner/admin membership. Upload URLs are short-lived and bind the file type and size. Screenshot reads require signed URLs; avatars and Organization logos are public, as with public object storage. Mount `STORAGE_LOCAL_PATH` on persistent storage and give the application user write access.
+
+The public storage base URL must match `/api/storage/<STORAGE_BUCKET_NAME>`. Treat the mounted directory as application-owned: do not put unrelated files there or allow other users to create symlinks in it.
+
+### Generic S3-compatible storage
+
+```bash
+STORAGE_PROVIDER=s3
+STORAGE_ENDPOINT=https://storage.example.com
+STORAGE_REGION=us-east-1
+STORAGE_BUCKET_NAME=uploads
+STORAGE_FORCE_PATH_STYLE=true
+AWS_ACCESS_KEY_ID=your-access-key
+AWS_SECRET_ACCESS_KEY=your-secret-key
+NEXT_PUBLIC_STORAGE_BASE_URL=https://storage.example.com/uploads
+```
+
+This supports self-hosted MinIO and other S3-compatible servers. `STORAGE_ENDPOINT` is an HTTP(S) origin without a path. It must be reachable by both the application and users' browsers because dashboard uploads go directly to the presigned endpoint. Configure bucket CORS to allow uploads from your application origin with the `Content-Type` header. Configure public access or a CDN for avatars and Organization logos; screenshots also have signed read URLs.
+
+Leave `STORAGE_ENDPOINT` unset to use AWS S3, and normally set `STORAGE_FORCE_PATH_STYLE=false` there. Legacy `AWS_BUCKET_NAME` remains supported when `STORAGE_BUCKET_NAME` is unset.
 
 ### Cloudflare R2
 
-Create a bucket and an API token scoped to that bucket. Copy the account ID, access key, and secret into the R2 variables above. Make the bucket public (or front it with a Worker) so screenshots are readable by reviewers.
+Set `STORAGE_PROVIDER=r2`, `STORAGE_BUCKET_NAME`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `NEXT_PUBLIC_STORAGE_BASE_URL` to the bucket's public/custom-domain URL. The authenticated R2 API endpoint is not a public image URL.
 
-### Inngest
+Changing a storage provider does not migrate existing files. Copy existing objects and preserve their keys before changing providers. When moving between local and object storage, update the affected Asset records' provider and bucket fields as part of the migration. Previously uploaded avatars/logos use the currently configured public base URL, so plan their migration too.
 
-Create an app at [inngest.com](https://www.inngest.com). Copy the event key and signing key. After your first deployment, connect Inngest to your instance at `https://your-domain.com/api/inngest`.
+## Optional integrations and billing
 
-## 4. Run migrations
+Stripe billing is disabled when `NEXT_PUBLIC_IS_CLOUD=false`; self-hosted Organizations receive the top Plan without a Stripe account. Cloud billing screens and analytics are not enabled on self-hosted instances.
 
-From the repo root:
+GitHub, Linear, Jira, and Slack are optional. Their credentials are read only when used, rather than at application import. Copy the relevant variables from `apps/web/.env.example` into the Compose `.env` file if you want an integration. Do not attempt to connect an unconfigured integration. Token encryption keys are still mandatory when storing or reading that integration's tokens.
+
+For signed workflow execution, the app and Inngest server must share `INNGEST_EVENT_KEY` and `INNGEST_SIGNING_KEY`. Set `INNGEST_DEV=0` for production, even when the server is self-hosted. `INNGEST_SERVE_ORIGIN` can be an internal application origin reachable by Inngest; it does not change the public auth URL.
+
+## Manual Node deployment
+
+Use Node.js 24 and the repository's pinned pnpm version. Copy `apps/web/.env.example` into your host's environment configuration and set the provider variables above. Provision PostgreSQL and run your own Inngest server, or optionally use the hosted service.
+
+From the repository root:
 
 ```bash
-pnpm --filter @workspace/db migrate:dev
+pnpm install --frozen-lockfile
+pnpm build:packages
+pnpm --filter @workspace/db db:gen
+# Operator-managed production migration, not migrate dev.
+pnpm --filter @workspace/db exec prisma migrate deploy
+pnpm --filter web build
+pnpm --filter web start
 ```
 
-This applies all Prisma migrations and generates the client. For subsequent deploys, your host's build step should run `prisma generate`; Prisma migrations are committed to the repo and applied via `migrate:dev` in development and `migrate:deploy` in production (run this as part of your deploy pipeline).
+For self-hosted Inngest, point `INNGEST_BASE_URL` to its server, use matching keys, and register your app's `/api/inngest` URL using `inngest start --sdk-url ... --poll-interval 30`. Leave `INNGEST_BASE_URL` unset only when intentionally using Inngest Cloud.
 
-## 5. Verify
-
-After the first deploy:
-
-1. Visit `https://your-domain.com/login` and create the first account (becomes the admin).
-2. Create a project, copy the widget API key, and test the widget in any page.
-3. Check Inngest's dashboard to confirm events are being received.
-
-Your instance is now ready. Point your clients' widgets at `NEXT_PUBLIC_FF_API_ORIGIN` and connect your AI coding agent via the [MCP server](/docs/mcp/setup).
+Point installed Widgets and the [MCP server](/docs/mcp/setup) at your own application origin, not the FasterFixes cloud API.

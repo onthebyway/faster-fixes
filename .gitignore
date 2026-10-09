@@ -7,6 +7,12 @@ node_modules
 # pnpm places its content-addressable store here when no global store is configured.
 .pnpm-store
 
+# Self-hosted runtime data
+/storage/
+/apps/web/storage/
+/.inngest/
+/apps/web/.inngest/
+
 # Local env files
 .env
 .env.local

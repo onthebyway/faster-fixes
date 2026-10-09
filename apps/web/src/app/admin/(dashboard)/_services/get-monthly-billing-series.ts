@@ -1,4 +1,4 @@
-import { stripeApi } from "@/server/stripe";
+import { getStripeApi } from "@/server/stripe";
 import type Stripe from "stripe";
 import { listParisMonths, getParisMonthKey } from "../_helpers/paris-months";
 import { wasPayingAt } from "../_helpers/was-paying-at";
@@ -59,7 +59,7 @@ async function sumCollectedCentsByMonth(
 // VAT per month, over the last 12 Paris months including the current one.
 export async function getMonthlyBillingSeries(
   { now }: { now: Date },
-  stripe: Stripe = stripeApi,
+  stripe: Stripe = getStripeApi(),
 ) {
   const nowSeconds = Math.floor(now.getTime() / 1000);
   const months = listParisMonths(now, MONTH_COUNT);

@@ -1,4 +1,4 @@
-import { stripeApi } from "@/server/stripe";
+import { getStripeApi } from "@/server/stripe";
 import type Stripe from "stripe";
 import {
   BILLING_CURRENCY,
@@ -14,7 +14,7 @@ const WINDOW_SECONDS = 30 * DAY_SECONDS;
 // days before. Each window includes its start and excludes its end.
 export async function getCollectedRevenue(
   { now }: { now: Date },
-  stripe: Stripe = stripeApi,
+  stripe: Stripe = getStripeApi(),
 ) {
   const nowSeconds = Math.floor(now.getTime() / 1000);
   const currentStart = nowSeconds - WINDOW_SECONDS;

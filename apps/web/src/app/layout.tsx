@@ -1,6 +1,7 @@
 import { APP_URL } from "@/app/_constants/app";
 import { SITE_META_DESCRIPTION, SITE_NAME } from "@/app/_constants/seo";
 import { TRPCProviderWrapper as TRPCProvider } from "@/lib/trpc/trpc-provider.client";
+import { isCloud } from "@/utils/environment/env";
 import { FeedbackProvider } from "@fasterfixes/react";
 import { Analytics } from "@vercel/analytics/next";
 import "@workspace/ui/globals.css";
@@ -53,6 +54,7 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const content = <RootProvider>{children}</RootProvider>;
   return (
     <html
       lang="en"
@@ -75,14 +77,18 @@ export default function RootLayout({
               <NuqsAdapter>
                 <StopImpersonateButton />
 
-                <FeedbackProvider
-                  projectId={process.env.NEXT_PUBLIC_FF_API_KEY ?? ""}
-                  apiOrigin={process.env.NEXT_PUBLIC_FF_API_ORIGIN}
-                  position="bottom-right"
-                  captureDiagnostics={true}
-                >
-                  <RootProvider>{children}</RootProvider>
-                </FeedbackProvider>
+                {process.env.NEXT_PUBLIC_FF_API_KEY ? (
+                  <FeedbackProvider
+                    projectId={process.env.NEXT_PUBLIC_FF_API_KEY}
+                    apiOrigin={process.env.NEXT_PUBLIC_FF_API_ORIGIN}
+                    position="bottom-right"
+                    captureDiagnostics={true}
+                  >
+                    {content}
+                  </FeedbackProvider>
+                ) : (
+                  content
+                )}
 
                 <Toaster />
               </NuqsAdapter>
@@ -90,7 +96,7 @@ export default function RootLayout({
           </ConsentProvider>
         </ThemeProvider>
 
-        <Analytics />
+        {isCloud() && <Analytics />}
       </body>
     </html>
   );

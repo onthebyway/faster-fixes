@@ -1,9 +1,12 @@
 import { createMDX } from "fumadocs-mdx/next";
+import { fileURLToPath } from "node:url";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   transpilePackages: ["@workspace/ui"],
   typedRoutes: true,
+  output: "standalone",
+  outputFileTracingRoot: fileURLToPath(new URL("../../", import.meta.url)),
 
   experimental: {
     authInterrupts: true,

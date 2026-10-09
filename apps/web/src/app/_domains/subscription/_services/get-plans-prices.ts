@@ -1,5 +1,5 @@
 import { SUBSCRIPTION_PLANS } from "@/server/auth/config/subscription-plans";
-import { stripeApi } from "@/server/stripe";
+import { getStripeApi } from "@/server/stripe";
 import type Stripe from "stripe";
 
 export async function getPlansPrices({ planNames }: { planNames: string[] }) {
@@ -17,9 +17,9 @@ export async function getPlansPrices({ planNames }: { planNames: string[] }) {
     }
 
     try {
-      const monthlyPrice = await stripeApi.prices.retrieve(plan.priceId);
+      const monthlyPrice = await getStripeApi().prices.retrieve(plan.priceId);
       const annualPrice = plan.annualDiscountPriceId
-        ? await stripeApi.prices.retrieve(plan.annualDiscountPriceId)
+        ? await getStripeApi().prices.retrieve(plan.annualDiscountPriceId)
         : null;
 
       pricesMap[planName] = {

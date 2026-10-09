@@ -39,10 +39,11 @@ type PlunkContactResponse = {
 
 export class PlunkMailer implements Mailer {
   private apiKey: string;
-  private baseUrl = "https://next-api.useplunk.com";
+  private baseUrl: string;
 
-  constructor(apiKey: string) {
+  constructor(apiKey: string, baseUrl = "https://next-api.useplunk.com") {
     this.apiKey = apiKey;
+    this.baseUrl = baseUrl.replace(/\/$/, "");
   }
 
   public emails = {

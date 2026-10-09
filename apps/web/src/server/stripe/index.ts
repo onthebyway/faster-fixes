@@ -1,12 +1,13 @@
 import "server-only";
 
+import { requireEnv } from "@/utils/environment/require-env";
 import Stripe from "stripe";
 
-// Only throw if Stripe is actually accessed, not during module import
-// This allows the Better Auth CLI to import the config without needing env vars
-const stripeSecretKey = process.env.STRIPE_SECRET_KEY ?? "";
+let client: Stripe | undefined;
 
-export const stripeApi = new Stripe(
-  stripeSecretKey === "" ? "sk_test_placeholder" : stripeSecretKey,
-  { apiVersion: "2025-12-15.clover" },
-);
+export function getStripeApi() {
+  return (client ??= new Stripe(
+    requireEnv("STRIPE_SECRET_KEY", process.env.STRIPE_SECRET_KEY),
+    { apiVersion: "2025-12-15.clover" },
+  ));
+}

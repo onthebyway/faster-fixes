@@ -1,5 +1,5 @@
 import { PLAN_LIMITS, SubscriptionPlanName } from "@/app/_domains/subscription";
-import { stripeApi } from "@/server/stripe";
+import { getStripeApi } from "@/server/stripe";
 import { prisma } from "@workspace/db";
 import type Stripe from "stripe";
 import { getEngagedOrganizationWhere } from "../_helpers/engaged-organization-where";
@@ -17,7 +17,7 @@ const NEAR_LIMIT_FEEDBACK_COUNT = Math.ceil(
 
 export async function getActivationOverview(
   { now }: { now: Date },
-  stripe: Stripe = stripeApi,
+  stripe: Stripe = getStripeApi(),
 ) {
   const funnelStart = new Date(now.getTime() - FUNNEL_WINDOW_MS);
   const windowStart = new Date(now.getTime() - WINDOW_MS);

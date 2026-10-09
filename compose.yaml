@@ -1,0 +1,143 @@
+name: fasterfixes
+
+services:
+  postgres:
+    image: postgres:17-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: fasterfixes
+      POSTGRES_USER: fasterfixes
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fasterfixes -d fasterfixes"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build:
+      context: .
+      target: migrate
+    profiles: ["tools"]
+    environment:
+      DATABASE_URL: postgresql://fasterfixes:${POSTGRES_PASSWORD}@postgres:5432/fasterfixes
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  app:
+    build:
+      context: .
+      target: runtime
+      args:
+        BASE_URL: ${BASE_URL:-http://localhost:3000}
+        NEXT_PUBLIC_STORAGE_BASE_URL: ${NEXT_PUBLIC_STORAGE_BASE_URL:-/api/storage/uploads}
+        NEXT_PUBLIC_FF_API_ORIGIN: ${BASE_URL:-http://localhost:3000}
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    env_file:
+      - path: .env
+        required: false
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      DOMAIN_NAME: ${DOMAIN_NAME:-localhost}
+      BASE_URL: ${BASE_URL:-http://localhost:3000}
+      BETTER_AUTH_URL: ${BASE_URL:-http://localhost:3000}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET in .env}
+      DATABASE_PROVIDER: postgres
+      DATABASE_URL: postgresql://fasterfixes:${POSTGRES_PASSWORD}@postgres:5432/fasterfixes
+      NEXT_PUBLIC_IS_CLOUD: "false"
+      STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
+      STORAGE_LOCAL_PATH: /data/storage
+      STORAGE_BUCKET_NAME: ${STORAGE_BUCKET_NAME:-uploads}
+      STORAGE_REGION: ${STORAGE_REGION:-us-east-1}
+      STORAGE_ENDPOINT: ${STORAGE_ENDPOINT:-}
+      STORAGE_FORCE_PATH_STYLE: ${STORAGE_FORCE_PATH_STYLE:-true}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      MAILER_PROVIDER: ${MAILER_PROVIDER:-smtp}
+      EMAIL_FROM: ${EMAIL_FROM:-FasterFixes <noreply@localhost>}
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_REQUIRE_TLS: ${SMTP_REQUIRE_TLS:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      PLUNK_SECRET_KEY: ${PLUNK_SECRET_KEY:-}
+      PLUNK_BASE_URL: ${PLUNK_BASE_URL:-https://next-api.useplunk.com}
+      INNGEST_DEV: "0"
+      INNGEST_BASE_URL: http://inngest:8288
+      INNGEST_EVENT_KEY: ${INNGEST_EVENT_KEY:?Set INNGEST_EVENT_KEY in .env}
+      INNGEST_SIGNING_KEY: ${INNGEST_SIGNING_KEY:?Set INNGEST_SIGNING_KEY in .env}
+      INNGEST_SERVE_ORIGIN: http://app:3000
+    volumes:
+      - storage-data:/data/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      inngest:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+
+  inngest:
+    image: inngest/inngest:v1.46.0
+    command:
+      [
+        "inngest",
+        "start",
+        "--host",
+        "0.0.0.0",
+        "--sqlite-dir",
+        "/data",
+        "--sdk-url",
+        "http://app:3000/api/inngest",
+        "--poll-interval",
+        "30",
+      ]
+    restart: unless-stopped
+    stop_grace_period: 60s
+    environment:
+      INNGEST_EVENT_KEY: ${INNGEST_EVENT_KEY:?Set INNGEST_EVENT_KEY in .env}
+      INNGEST_SIGNING_KEY: ${INNGEST_SIGNING_KEY:?Set INNGEST_SIGNING_KEY in .env}
+    ports:
+      - "127.0.0.1:8288:8288"
+    volumes:
+      - inngest-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8288/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # Captures local test mail. Configure real SMTP before inviting real users.
+  mailpit:
+    image: axllent/mailpit:v1.29.2
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8025:8025"
+
+volumes:
+  postgres-data:
+  storage-data:
+  inngest-data:

@@ -1,5 +1,4 @@
-import { s3Client } from "@/server/storage";
-import { deleteObject } from "@better-upload/server/helpers";
+import { deleteStorageObject } from "./objects";
 import { prisma } from "@workspace/db";
 
 /**
@@ -9,16 +8,13 @@ import { prisma } from "@workspace/db";
 export async function deleteAsset(assetId: string) {
   const asset = await prisma.asset.findUnique({
     where: { id: assetId },
-    select: { id: true, key: true, bucket: true },
+    select: { id: true, key: true, bucket: true, provider: true },
   });
 
   if (!asset) return;
 
   try {
-    await deleteObject(s3Client, {
-      bucket: asset.bucket,
-      key: asset.key,
-    });
+    await deleteStorageObject(asset);
   } catch (error) {
     console.error(`Failed to delete S3 object (key=${asset.key}):`, error);
   }
