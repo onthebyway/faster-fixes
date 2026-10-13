@@ -62,11 +62,11 @@ services:
       R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
       R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
       MAILER_PROVIDER: ${MAILER_PROVIDER:-smtp}
-      EMAIL_FROM: ${EMAIL_FROM:-FasterFixes <noreply@localhost>}
-      SMTP_HOST: ${SMTP_HOST:-mailpit}
-      SMTP_PORT: ${SMTP_PORT:-1025}
+      EMAIL_FROM: ${EMAIL_FROM:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_SECURE: ${SMTP_SECURE:-false}
-      SMTP_REQUIRE_TLS: ${SMTP_REQUIRE_TLS:-false}
+      SMTP_REQUIRE_TLS: ${SMTP_REQUIRE_TLS:-true}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
@@ -84,8 +84,6 @@ services:
         condition: service_completed_successfully
       inngest:
         condition: service_healthy
-      mailpit:
-        condition: service_started
     healthcheck:
       test:
         [
@@ -133,15 +131,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
-
-  # Captures local test mail. Configure real SMTP before inviting real users.
-  mailpit:
-    image: axllent/mailpit:v1.29.2
-    restart: unless-stopped
-    environment:
-      MP_DISABLE_VERSION_CHECK: "true"
-    ports:
-      - "127.0.0.1:8025:8025"
 
 volumes:
   postgres-data:

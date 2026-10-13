@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 
-// Run against the disposable local Compose stack, not an existing production DB.
+// Run with compose.smoke.yaml against disposable local volumes, never production.
 // Creates a test account, Project, Reviewer, avatars/logos, and Feedback.
 const origin = "http://localhost:3000";
 const mailpit = "http://localhost:8025";

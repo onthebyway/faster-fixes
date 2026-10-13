@@ -19,6 +19,8 @@ cp .env.example .env
 
 Edit `.env` and set the four required secrets. Generate the auth secret with `openssl rand -base64 32`, and each of `POSTGRES_PASSWORD`, `INNGEST_EVENT_KEY`, and `INNGEST_SIGNING_KEY` with `openssl rand -hex 32`. The database password must be URL-safe because Compose uses it in the connection URL.
 
+Configure `SMTP_HOST`, the port/TLS settings, a verified `EMAIL_FROM`, and `SMTP_USER`/`SMTP_PASSWORD` if your server requires authentication. The deployment does not include a mail server. See [SMTP configuration](#smtp) below.
+
 ```bash
 docker compose up -d --build
 ```
@@ -30,9 +32,8 @@ The stack includes:
 - **Application** at `http://localhost:3000`, with local file storage in a persistent volume.
 - **PostgreSQL 17**, reachable only within the Compose network.
 - **Self-hosted Inngest** at `http://localhost:8288`, with persistent SQLite data and queue snapshots. No cloud account is required.
-- **Mailpit** at `http://localhost:8025`, which captures verification, invitation, and password-reset emails for testing. It does not deliver emails to real recipients.
 
-The application, Mailpit, and Inngest ports bind to loopback. Open `/signup`, create an account, and use Mailpit to follow the verification link. The first account is not automatically an administrator; administrator roles are managed separately. Create an Organization and Project, then configure a Widget using its **Project public ID** and your instance's API origin. The **Reviewer token** controls access to Feedback.
+The application and Inngest ports bind to loopback. Open `/signup`, create an account, and follow the verification link delivered to your email inbox. The first account is not automatically an administrator; administrator roles are managed separately. Create an Organization and Project, then configure a Widget using its **Project public ID** and your instance's API origin. The **Reviewer token** controls access to Feedback.
 
 The onboarding install snippets use this instance for both the widget script and API. A script-only installation needs no external CDN:
 
@@ -58,9 +59,11 @@ Inngest polls the application at `http://app:3000/api/inngest` every 30 seconds 
 
 ## Local deployment smoke test
 
-With the disposable local Compose stack running, use Node.js 24 to run:
+Automated signup checks use `compose.smoke.yaml`, a test-only overlay that adds Mailpit for SMTP capture. Normal deployments do not load this file. Use a disposable local deployment with `BASE_URL=http://localhost:3000`, `DOMAIN_NAME=localhost`, and the four local secrets configured. With Node.js 24:
 
 ```bash
+export COMPOSE_FILE=compose.yaml:compose.smoke.yaml
+docker compose up -d --build --wait --wait-timeout 120
 node scripts/self-hosted-smoke.ts
 ```
 
@@ -72,6 +75,9 @@ Check that data survives a restart:
 docker compose restart postgres app inngest mailpit
 docker compose up -d --wait --wait-timeout 120
 node scripts/self-hosted-smoke.ts --check-persistence
+# Stop the test stack and clear the overlay selection before a normal deployment.
+docker compose down
+unset COMPOSE_FILE
 ```
 
 The repository CI runs these same checks against a freshly built production image and disposable Compose volumes, without provider credentials.
@@ -80,8 +86,8 @@ The repository CI runs these same checks against a freshly built production imag
 
 Before inviting real users:
 
-1. Put a TLS reverse proxy in front of the application. Set `BASE_URL` and `DOMAIN_NAME` to the public URL and hostname. Keep Inngest, Mailpit, and PostgreSQL private; their management interfaces are not public application endpoints.
-2. Set real SMTP credentials and a verified `EMAIL_FROM`. Normally use port 587 with `SMTP_REQUIRE_TLS=true`, or port 465 with `SMTP_SECURE=true`. Do not leave the Mailpit settings in place for real deliveries.
+1. Put a TLS reverse proxy in front of the application. Set `BASE_URL` and `DOMAIN_NAME` to the public URL and hostname. Keep Inngest and PostgreSQL private; their management interfaces are not public application endpoints.
+2. Confirm SMTP email delivery with a verified `EMAIL_FROM`. Normally use port 587 with `SMTP_REQUIRE_TLS=true`, or port 465 with `SMTP_SECURE=true`. The test-only Compose overlay must not be used for production.
 3. Rebuild the app after changing `BASE_URL` or `NEXT_PUBLIC_STORAGE_BASE_URL`. Next.js embeds public variables in browser bundles; changing only container environment variables is insufficient.
 4. Back up the PostgreSQL, storage, and Inngest volumes. Restore them together when recovering an instance. Local storage requires a persistent disk shared by every app replica; use S3-compatible storage when replicas cannot share that disk.
 5. Monitor disk space and workflow failures. The bundled Inngest setup is single-node: queue snapshots are periodic, not a high-availability guarantee. For stronger recovery guarantees, configure external persistent Redis and PostgreSQL using Inngest's `--redis-uri` and `--postgres-uri` flags. See [Inngest self-hosting documentation](https://www.inngest.com/docs/platform-and-operations/self-host-inngest).

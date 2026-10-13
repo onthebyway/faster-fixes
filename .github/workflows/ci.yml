@@ -109,6 +109,8 @@ jobs:
     name: Self-hosted Compose
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      COMPOSE_FILE: compose.yaml:compose.smoke.yaml
     steps:
       - uses: actions/checkout@v7
 
